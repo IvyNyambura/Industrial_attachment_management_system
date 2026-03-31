@@ -2,11 +2,11 @@
 IASMS is a full-stack web application designed to streamline the entire industrial attachment process for university students. The system manages everything from initial company registration to final grading and report submission.
 Key Objectives:
 
-✅ Digitize the industrial attachment workflow
-✅ Enable real-time tracking of student progress
-✅ Facilitate communication between students, company supervisors, and university lecturers
-✅ Provide GPS-verified company locations for site visits
-✅ Automate grading and report submission
+1. Digitize the industrial attachment workflow
+2. Enable real-time tracking of student progress
+3. Facilitate communication between students, company supervisors, and university lecturers
+4. Provide GPS-verified company locations for site visits
+5. Automate grading and report submission
 
 
 Features
