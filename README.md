@@ -26,4 +26,4 @@ Pick a role and you're signed in instantly:
 | Visiting Supervisor  | lecturer.demo@iams.dev             |
 
 > Password for all demo accounts: `Demo@1234`
-> ⚠️ Seeded with fictional data for demo purposes — destructive actions are disabled.
+> ⚠️ Seeded with fictional data for demo purposes - destructive actions are disabled.
