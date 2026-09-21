@@ -1,0 +1,39 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: iams
+      MYSQL_DATABASE: iams
+    ports:
+      - "3306:3306"
+    volumes:
+      - iams_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-piams"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: iams
+      MYSQL_DB: iams
+      SECRET_KEY: iams-local-docker-secret
+      PORT: "5000"
+      DEBUG: "false"
+      FRONTEND_BUILD: /app/frontend_build
+      DEMO_PASSWORD: Demo@1234
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  iams_mysql:

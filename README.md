@@ -1,73 +1,72 @@
- Overview
-IASMS is a full-stack web application designed to streamline the entire industrial attachment process for university students. The system manages everything from initial company registration to final grading and report submission.
-Key Objectives:
+# Industrial Attachment Management System (IAMS)
 
-1. Digitize the industrial attachment workflow
-2. Enable real-time tracking of student progress
-3. Facilitate communication between students, company supervisors, and university lecturers
-4. Provide GPS-verified company locations for site visits
-5. Automate grading and report submission
+Full-stack web app for Murang'a University industrial attachment: student registration, assumption of duty, e-logbook, reports, and grading by company and university supervisors.
 
+## Demo accounts (for portfolio visitors)
 
-Features
-Student Features
+Password for every demo role is `Demo@1234`.
 
-Self-registration with secure authentication
-Assumption of Duty form submission
-Weekly E-Logbook (12 weeks tracking)
-GPS location pinning with Google Maps integration
-View grades from company and visiting supervisors
-Final report upload
+| Role | Username |
+| --- | --- |
+| Student | `SC232/DEMO/2022` |
+| Admin | `admin` (password only; username is fixed) |
+| Company supervisor | `company.demo@iams.dev` |
+| Visiting supervisor | `lecturer.demo@iams.dev` |
 
-Company Supervisor Features
+The sign-in page has **Use demo** buttons that fill these credentials. The demo student already has assumption-of-duty, week-1 logbook, supervisor assignment, and sample grades.
 
-Auto-created account when student submits Assumption form
-View assigned students
-Grade student performance
-Provide feedback and comments
+## Local development
 
-Visiting Supervisor (Lecturer) Features
+1. Create the MySQL database, then copy `backend/.env.example` to `backend/.env` and set `MYSQL_*`.
+2. Install and start the API:
 
-View assigned students with company locations
-Get directions to company sites via Google Maps
-Review student logbooks
-Grade student performance
-Add remarks and recommendations
+```bash
+cd backend
+pip install -r requirements.txt
+python init_db.py
+python app.py
+```
 
-Admin Features
+3. Start the React app:
 
-Manage student records
-Add visiting supervisors (lecturers)
-Assign supervisors to students
-Generate reports and analytics
-System configuration
+```bash
+cd frontend
+npm install
+npm start
+```
 
+The UI uses `http://localhost:5000` in development.
 
-Tech Stack
-Frontend
+## Host the app (one Docker service)
 
-React 18.2.0 - Component-based UI library
-JavaScript (ES6+) - Programming language
-HTML5 & CSS3 - Markup and styling
-Google Maps Embed API - Location mapping
-Geolocation API - GPS coordinates
+This is the path to use for a live portfolio link. The container builds the React app and Flask serves it plus `/api`.
 
-Backend
+1. Create a **MySQL 8** database (Railway, Aiven, PlanetScale-compatible MySQL, or a VPS).
+2. Push this repo to GitHub.
+3. Deploy the Dockerfile to **Render**, **Railway**, **Fly.io**, or any Docker host.
+4. Set environment variables:
 
-Flask 2.3.3 - Python web framework
-Python 3.8+ - Server-side programming
-Flask-CORS - Cross-origin resource sharing
-Flask-MySQLdb - MySQL database connector
-Werkzeug - Password hashing (scrypt)
-python-dotenv - Environment variable management
+- `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`
+- `SECRET_KEY` (long random string)
+- `DEMO_PASSWORD=Demo@1234`
+- `DEBUG=false`
 
-Database
+On start, `init_db.py` creates tables (if needed) and upserts the demo accounts.
 
-MySQL 8.0 - Relational database management system
-11 Tables - Normalized schema design
+### Run everything on your machine with Docker
 
-APIs & Services
+```bash
+docker compose up --build
+```
 
-Google Maps Embed API - Interactive maps
-OpenStreetMap Nominatim - Reverse geocoding
-RESTful API - JSON-based communication
+Open http://localhost:5000 and use the demo logins.
+
+### Render
+
+Create a MySQL instance first (Render does not bundle MySQL). Then create a Web Service from this repo with **Docker** runtime, paste the MySQL connection values, and use health check `/api/health`.
+
+## Portfolio blurb
+
+**IAMS** is a role-based industrial attachment portal (React + Flask + MySQL). Students submit assumption of duty and weekly logbooks; company and university supervisors grade performance; admins assign lecturers. Live demo accounts are on the login screen.
+
+Replace this README's live URL once your host finishes deploying: `https://YOUR-APP.onrender.com`

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: iams
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_PORT
+        value: "3306"
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: MYSQL_DB
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEMO_PASSWORD
+        value: Demo@1234
+      - key: DEBUG
+        value: "false"
+      - key: FRONTEND_BUILD
+        value: /app/frontend_build

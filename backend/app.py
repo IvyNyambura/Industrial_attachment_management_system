@@ -1,12 +1,16 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
 import pymysql
 pymysql.install_as_MySQLdb()
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_mysqldb import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-import os
 
 from validation import (
     validate_assumption_duty,
@@ -17,17 +21,26 @@ from validation import (
     validate_student_register,
 )
 
-app = Flask(__name__)
-CORS(app)
+app = Flask(__name__, static_folder=None)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'iams-change-me')
+
+_cors_origins = os.getenv('CORS_ORIGINS', '*')
+CORS(app, origins=[o.strip() for o in _cors_origins.split(',')] if _cors_origins != '*' else '*')
 
 # MySQL Configuration
 app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
 app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', '')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'iams')
+app.config['MYSQL_PORT'] = int(os.getenv('MYSQL_PORT', '3306'))
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
 mysql = MySQL(app)
+
+FRONTEND_BUILD = os.getenv(
+    'FRONTEND_BUILD',
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend', 'build')),
+)
 
 # ─────────────────────────────────────────────
 # Helper
@@ -35,6 +48,11 @@ mysql = MySQL(app)
 
 def get_cursor():
     return mysql.connection.cursor()
+
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({'success': True, 'status': 'ok'})
 
 
 # ─────────────────────────────────────────────
@@ -429,6 +447,87 @@ def get_reports(registration_number):
 
 
 # ─────────────────────────────────────────────
+# NEW: Reports visible to a visiting supervisor's assigned students
+# ─────────────────────────────────────────────
+
+@app.route('/api/supervisor/visiting/reports', methods=['GET'])
+def get_visiting_supervisor_reports():
+    """
+    Return the reports uploaded by every student who is assigned
+    (via student_assignments) to this visiting supervisor.
+    Query param: supervisorId
+    """
+    supervisor_id = request.args.get('supervisorId')
+    if not supervisor_id:
+        return jsonify({'success': False, 'message': 'Missing supervisorId'}), 400
+
+    cursor = None
+    try:
+        cursor = get_cursor()
+        cursor.execute(
+            """SELECT r.id, r.filename, r.filepath, r.uploaded_at,
+                      s.id AS student_id, s.registration_number,
+                      s.first_name, s.last_name
+               FROM reports r
+               JOIN student_assignments sa ON sa.student_id = r.student_id
+               JOIN students s ON s.id = r.student_id
+               WHERE sa.supervisor_id = %s
+               ORDER BY r.uploaded_at DESC""",
+            (supervisor_id,)
+        )
+        reports = cursor.fetchall()
+        return jsonify({'success': True, 'reports': reports})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+
+
+# ─────────────────────────────────────────────
+# NEW: Serve an uploaded report file (view/download)
+# ─────────────────────────────────────────────
+
+@app.route('/api/reports/download/<int:report_id>', methods=['GET'])
+def download_report(report_id):
+    """
+    Serve a report file for viewing/downloading. Only lets a visiting
+    supervisor download it if they are actually assigned to that report's
+    student (via student_assignments) - same ownership check pattern as
+    the reports-list and grading routes above.
+    Query param: supervisorId
+    """
+    supervisor_id = request.args.get('supervisorId')
+    if not supervisor_id:
+        return jsonify({'success': False, 'message': 'Missing supervisorId'}), 400
+
+    cursor = None
+    try:
+        cursor = get_cursor()
+        cursor.execute(
+            """SELECT r.filepath, r.filename
+               FROM reports r
+               JOIN student_assignments sa ON sa.student_id = r.student_id
+               WHERE r.id = %s AND sa.supervisor_id = %s""",
+            (report_id, supervisor_id)
+        )
+        report = cursor.fetchone()
+        if not report:
+            return jsonify({'success': False, 'message': 'Report not found or not authorized'}), 404
+
+        directory = os.path.dirname(os.path.abspath(report['filepath']))
+        filename = os.path.basename(report['filepath'])
+        return send_from_directory(
+            directory, filename, as_attachment=True, download_name=report['filename']
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+
+
+# ─────────────────────────────────────────────
 # Company/Visiting Grades (Frontend-compatible endpoints)
 # ─────────────────────────────────────────────
 
@@ -538,17 +637,16 @@ def save_company_grades():
                (student_id, supervisor_id, punctuality, dress_code,
                 technical_skills, communication, total_score, comments)
                VALUES (
-                              (SELECT id FROM students WHERE registration_number = %s),
-                              %s, %s, %s, %s, %s, %s, %s
+                 (SELECT id FROM students WHERE registration_number = %s),
+                 %s, %s, %s, %s, %s, %s, %s
                )
-               ON DUPLICATE KEYUPDATE
-                 punctuality      =VALUES(punctuality),
-                 dress_code       =VALUES(dress_code),
-                 technical_skills =VALUES(technical_skills),
-                 communication    =VALUES(communication),
-                 total_score      =
-                               VALUES(total_score),
-                 comments         =VALUES(comments)""",
+               ON DUPLICATE KEY UPDATE
+                 punctuality      = VALUES(punctuality),
+                 dress_code       = VALUES(dress_code),
+                 technical_skills = VALUES(technical_skills),
+                 communication    = VALUES(communication),
+                 total_score      = VALUES(total_score),
+                 comments         = VALUES(comments)""",
             (
                 data['registrationNumber'],
                 data.get('supervisorId'),
@@ -596,33 +694,61 @@ def get_company_grades(registration_number):
 
 @app.route('/api/grades/visiting', methods=['POST'])
 def save_visiting_grades():
-    """Visiting supervisor submits grades for a student."""
+    """
+    Visiting supervisor submits grades for a student.
+
+    Writes to the ACTUAL visiting_grades columns (student_id, grades,
+    total_score, remarks) - the previous version of this route referenced
+    columns (supervisor_id, logbook_score, report_score, presentation_score,
+    comments) that don't exist on this table and would have failed at
+    runtime. Detailed per-criterion scores now go inside the `grades` JSON
+    blob instead of separate columns.
+
+    Also verifies the supervisor is actually the one assigned to this
+    student (via student_assignments) before writing the grade.
+    """
+    import json
+
     data = request.json or {}
     cursor = None
     try:
+        supervisor_id = data.get('supervisorId')
+        registration_number = data.get('registrationNumber')
+
+        if not registration_number or not supervisor_id:
+            return jsonify({'success': False, 'message': 'Missing registrationNumber or supervisorId'}), 400
+
         cursor = get_cursor()
+
+        # Ownership check: this supervisor must be assigned to this student.
         cursor.execute(
-            """INSERT INTO visiting_grades
-               (student_id, supervisor_id, logbook_score, report_score,
-                presentation_score, total_score, comments)
+            """SELECT 1 FROM student_assignments sa
+               JOIN students s ON s.id = sa.student_id
+               WHERE s.registration_number = %s AND sa.supervisor_id = %s""",
+            (registration_number, supervisor_id)
+        )
+        if not cursor.fetchone():
+            return jsonify({'success': False, 'message': 'Not your assigned student'}), 403
+
+        grades_payload = data.get('grades', {})
+        total_score = data.get('totalScore', 0)
+        remarks = data.get('remarks', data.get('comments', ''))
+
+        cursor.execute(
+            """INSERT INTO visiting_grades (student_id, grades, total_score, remarks)
                VALUES (
                  (SELECT id FROM students WHERE registration_number = %s),
-                 %s, %s, %s, %s, %s, %s
+                 %s, %s, %s
                )
                ON DUPLICATE KEY UPDATE
-                 logbook_score       = VALUES(logbook_score),
-                 report_score        = VALUES(report_score),
-                 presentation_score  = VALUES(presentation_score),
-                 total_score         = VALUES(total_score),
-                 comments            = VALUES(comments)""",
+                 grades      = VALUES(grades),
+                 total_score = VALUES(total_score),
+                 remarks     = VALUES(remarks)""",
             (
-                data['registrationNumber'],
-                data.get('supervisorId'),
-                data.get('logbookScore', 0),
-                data.get('reportScore', 0),
-                data.get('presentationScore', 0),
-                data.get('totalScore', 0),
-                data.get('comments', ''),
+                registration_number,
+                json.dumps(grades_payload),
+                total_score,
+                remarks,
             )
         )
         mysql.connection.commit()
@@ -1097,9 +1223,29 @@ def get_supervisor_students():
 
 
 # ─────────────────────────────────────────────
-# Entry Point
+# Frontend (production build) + Entry Point
 # ─────────────────────────────────────────────
 
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    if path.startswith('api/'):
+        return jsonify({'success': False, 'message': 'Not found'}), 404
+    if os.path.isdir(FRONTEND_BUILD):
+        file_path = os.path.join(FRONTEND_BUILD, path)
+        if path and os.path.isfile(file_path):
+            return send_from_directory(FRONTEND_BUILD, path)
+        index = os.path.join(FRONTEND_BUILD, 'index.html')
+        if os.path.isfile(index):
+            return send_from_directory(FRONTEND_BUILD, 'index.html')
+    return jsonify({
+        'success': False,
+        'message': 'API is running. Build the React app or set FRONTEND_BUILD.',
+    }), 404
+
+
 if __name__ == '__main__':
-    os.makedirs('uploads/reports', exist_ok=True)
-    app.run(debug=True, port=5000)
+    os.makedirs(os.getenv('UPLOAD_FOLDER', 'uploads/reports'), exist_ok=True)
+    debug = os.getenv('DEBUG', 'true').lower() in ('1', 'true', 'yes')
+    port = int(os.getenv('PORT', '5000'))
+    app.run(debug=debug, host='0.0.0.0', port=port)
