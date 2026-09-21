@@ -35,7 +35,7 @@ npm install
 npm start
 ```
 
-The UI uses `http://localhost:5000` in development.
+The UI uses `http://http://localhost:3000` in development.
 
 ## Host the app (one Docker service)
 
